@@ -17,6 +17,7 @@ TH_TONE_MARKS = [
 ]
 TH_UNDER_VOWELS = ["0xe38", "0xe39", "\0xe3A"]
 TH_UPPER_VOWELS = ["0xe31", "0xe34", "0xe35", "0xe36", "0xe37"]
+TH_UPPER_BACK_VOWELS = ["0xe33"]
 
 
 def generate(
@@ -64,11 +65,19 @@ def generate(
 def _compute_character_width(image_font: ImageFont, character: str) -> int:
     if len(character) == 1 and (
         "{0:#x}".format(ord(character))
-        in TH_TONE_MARKS + TH_UNDER_VOWELS + TH_UNDER_VOWELS + TH_UPPER_VOWELS
+        in TH_TONE_MARKS + TH_UNDER_VOWELS + TH_UPPER_VOWELS
     ):
         return 0
     # Casting as int to preserve the old behavior
     return round(image_font.getlength(character))
+
+def _compute_character_height (image_font: ImageFont, char: str, prev: str, next: str) -> int:
+    is_upper = lambda x :  "{0:#x}".format(ord(x)) in TH_TONE_MARKS + TH_UPPER_VOWELS
+    is_upper_back = lambda x :  "{0:#x}".format(ord(x)) in TH_UPPER_BACK_VOWELS
+    if len(char) == 1 and is_upper(char) and (is_upper(prev) or is_upper_back(next)):
+        (_, h) = image_font.getsize(char)
+        return (h / 5) * -1
+    return 0
 
 
 def _generate_horizontal_text(
@@ -84,7 +93,6 @@ def _generate_horizontal_text(
     stroke_fill: str = "#282828",
 ) -> Tuple:
     image_font = ImageFont.truetype(font=font, size=font_size)
-
     space_width = int(get_text_width(image_font, " ") * space_width)
 
     if word_split:
@@ -100,6 +108,13 @@ def _generate_horizontal_text(
         _compute_character_width(image_font, p) if p != " " else space_width
         for p in splitted_text
     ]
+    piece_heights = []
+    for i, p in enumerate(splitted_text):
+        try:
+            piece_heights.append(_compute_character_height(image_font, p, splitted_text[i - 1], splitted_text[i + 1]))
+        except IndexError:
+            piece_heights.append(0)
+
     text_width = sum(piece_widths)
     if not word_split:
         text_width += character_spacing * (len(text) - 1)
@@ -133,7 +148,10 @@ def _generate_horizontal_text(
 
     for i, p in enumerate(splitted_text):
         txt_img_draw.text(
-            (sum(piece_widths[0:i]) + i * character_spacing * int(not word_split), 0),
+            (
+                sum(piece_widths[0:i]) + i * character_spacing * int(not word_split),
+                piece_heights[i]
+            ),
             p,
             fill=fill,
             font=image_font,
